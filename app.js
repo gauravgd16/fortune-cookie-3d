@@ -1,5 +1,5 @@
-// Mooncake Oracle — tap the 3D mooncake to break it open and reveal a Chinese quote.
-// Three.js scene: a round mooncake with a 福 imprint on top, splits along the equator.
+// Fortune Cookie Oracle — tap the 3D fortune cookie to crack it open
+// and watch a paper slip slide out from one side, revealing a Chinese quote.
 
 import * as THREE from "three";
 import { pickRandom } from "./quotes.js";
@@ -20,8 +20,8 @@ const resetBtn = document.getElementById("reset-btn");
 const scene = new THREE.Scene();
 
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-camera.position.set(0, 3.4, 5.4);
-camera.lookAt(0, -0.1, 0);
+camera.position.set(0, 1.0, 5.0);
+camera.lookAt(0, 0.1, 0);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -45,13 +45,12 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// ---------- Lighting (cool moonlit ambience) ----------
+// ---------- Lighting ----------
 const ambient = new THREE.AmbientLight(0xb8c8ff, 0.45);
 scene.add(ambient);
 
-// Warm key light from above-front (gold) — emphasizes the 福 stamp on top
-const key = new THREE.DirectionalLight(0xffe6b0, 2.2);
-key.position.set(2, 6, 3);
+const key = new THREE.DirectionalLight(0xffe6b0, 2.0);
+key.position.set(2, 5, 4);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
 key.shadow.camera.near = 0.5;
@@ -63,144 +62,15 @@ key.shadow.camera.bottom = -3;
 key.shadow.bias = -0.0005;
 scene.add(key);
 
-// Cool rim light from behind (indigo/jade)
 const rim = new THREE.DirectionalLight(0x88a8ff, 0.85);
 rim.position.set(-3, 2, -4);
 scene.add(rim);
 
-// Soft fill from below (warm)
 const fill = new THREE.PointLight(0xffb060, 0.5, 12);
 fill.position.set(0, -2.5, 3);
 scene.add(fill);
 
 // Background glow halo
-const glowTex = makeRadialGradient("#3a2a6a", "#000000", 256);
-const glowMat = new THREE.MeshBasicMaterial({
-  map: glowTex, transparent: true, opacity: 0.55, depthWrite: false
-});
-const glowSprite = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), glowMat);
-glowSprite.position.set(0, 0, -3);
-scene.add(glowSprite);
-
-// Subtle pedestal disc (catches shadow, reads as "table")
-const pedestalGeo = new THREE.CircleGeometry(2.6, 64);
-const pedestalMat = new THREE.MeshStandardMaterial({
-  color: 0x1a1138,
-  roughness: 0.9,
-  metalness: 0.1,
-  transparent: true,
-  opacity: 0.85
-});
-const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
-pedestal.rotation.x = -Math.PI / 2;
-pedestal.position.y = -0.85;
-pedestal.receiveShadow = true;
-scene.add(pedestal);
-
-// ---------- Mooncake geometry ----------
-// A mooncake is a short, fluted cylinder with a slightly domed top.
-// Top has a stamped 福 character + scalloped edge.
-const MC_RADIUS = 1.25;
-const MC_HEIGHT = 0.85;
-const MC_FLUTES = 16;
-const MC_FLUTE_DEPTH = 0.05;
-
-// Build the side wall as a fluted lathe, then cap with stamped top + flat bottom.
-function makeMooncakeSide() {
-  // Lathe profile: from bottom-outer up to top-outer with a slight dome.
-  const points = [];
-  const segs = 14;
-  for (let i = 0; i <= segs; i++) {
-    const t = i / segs;
-    // Profile bows outward slightly in the middle for a hand-pressed feel
-    const bow = Math.sin(t * Math.PI) * 0.04;
-    const r = MC_RADIUS + bow;
-    const y = -MC_HEIGHT / 2 + t * MC_HEIGHT;
-    points.push(new THREE.Vector2(r, y));
-  }
-  const geo = new THREE.LatheGeometry(points, 96);
-  // Add fluting via vertex displacement around theta
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const theta = Math.atan2(z, x);
-    const r0 = Math.sqrt(x * x + z * z);
-    // Sinusoidal flutes; deeper near the equator, smoother near top/bottom
-    const yNorm = y / (MC_HEIGHT / 2); // -1 .. 1
-    const flutMask = Math.cos(yNorm * Math.PI / 2); // 1 in middle, 0 at ends
-    const r = r0 - Math.abs(Math.cos(theta * MC_FLUTES)) * MC_FLUTE_DEPTH * flutMask;
-    pos.setX(i, r * Math.cos(theta));
-    pos.setZ(i, r * Math.sin(theta));
-  }
-  geo.computeVertexNormals();
-  return geo;
-}
-
-// Top cap with central 福 stamp (texture-driven height + bumpmap effect via normal)
-function makeMooncakeCap(top = true) {
-  // Slightly domed disc with a stamped indent in the middle
-  const segs = 96, rings = 36;
-  const geo = new THREE.CircleGeometry(MC_RADIUS, segs);
-  // Convert flat circle into a domed disc with stamped center
-  const pos = geo.attributes.position;
-  // Add radial subdivisions by re-tessellating: we'll instead replace with a custom buffergeom
-  const verts = [];
-  const idx = [];
-  // Build concentric rings
-  for (let r = 0; r <= rings; r++) {
-    const rt = r / rings;
-    const radius = rt * MC_RADIUS;
-    for (let s = 0; s <= segs; s++) {
-      const theta = (s / segs) * Math.PI * 2;
-      const x = radius * Math.cos(theta);
-      const z = radius * Math.sin(theta);
-      // Dome height: outer rim higher (raised border), center stamped slightly down
-      const rim = smoothstep(0.78, 1.0, rt) * 0.05;
-      // Center stamped indent (mild, so 福 reads visible)
-      const indent = (1 - smoothstep(0.0, 0.42, rt)) * 0.025;
-      // Subtle outer dome
-      const dome = (1 - rt) * 0.015;
-      // Scalloped edge fluting on the very rim
-      const scallop = smoothstep(0.9, 1.0, rt) * Math.cos(theta * MC_FLUTES) * 0.025;
-      // Always lift above baseline so cap stays fully above the side cylinder
-      const lift = 0.06;
-      const y = (top ? 1 : -1) * (lift + dome + rim - indent + scallop);
-      verts.push(x, y, z);
-    }
-  }
-  for (let r = 0; r < rings; r++) {
-    for (let s = 0; s < segs; s++) {
-      const a = r * (segs + 1) + s;
-      const b = a + 1;
-      const c = a + (segs + 1);
-      const d = c + 1;
-      if (top) { idx.push(a, c, b, b, c, d); }
-      else     { idx.push(a, b, c, b, d, c); }
-    }
-  }
-  const bg = new THREE.BufferGeometry();
-  bg.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
-  bg.setIndex(idx);
-  bg.computeVertexNormals();
-  // UVs for the stamp texture (radial mapping centered)
-  const uvs = [];
-  for (let r = 0; r <= rings; r++) {
-    const rt = r / rings;
-    for (let s = 0; s <= segs; s++) {
-      const theta = (s / segs) * Math.PI * 2;
-      uvs.push(0.5 + rt * 0.5 * Math.cos(theta), 0.5 + rt * 0.5 * Math.sin(theta));
-    }
-  }
-  bg.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  return bg;
-}
-
-function smoothstep(a, b, x) {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
-// ---------- Textures ----------
 function makeRadialGradient(c1, c2, size) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
@@ -214,209 +84,181 @@ function makeRadialGradient(c1, c2, size) {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const glowTex = makeRadialGradient("#3a2a6a", "#000000", 256);
+const glowMat = new THREE.MeshBasicMaterial({
+  map: glowTex, transparent: true, opacity: 0.55, depthWrite: false
+});
+const glowSprite = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), glowMat);
+glowSprite.position.set(0, 0, -3);
+scene.add(glowSprite);
 
-// Mooncake side texture: warm baked gold-brown with subtle noise
-function makeMooncakeSideTexture(size = 512) {
+// Pedestal
+const pedestal = new THREE.Mesh(
+  new THREE.CircleGeometry(2.6, 64),
+  new THREE.MeshStandardMaterial({
+    color: 0x1a1138, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 0.85
+  })
+);
+pedestal.rotation.x = -Math.PI / 2;
+pedestal.position.y = -0.85;
+pedestal.receiveShadow = true;
+scene.add(pedestal);
+
+// ---------- Fortune cookie textures ----------
+function makeCookieTexture(size = 512) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const ctx = c.getContext("2d");
+  // Base baked-cream wafer color
   const g = ctx.createLinearGradient(0, 0, 0, size);
-  g.addColorStop(0, "#d8a45a");
-  g.addColorStop(0.5, "#b9803d");
-  g.addColorStop(1, "#8c5824");
+  g.addColorStop(0, "#f7d488");
+  g.addColorStop(0.4, "#e9b660");
+  g.addColorStop(0.7, "#d99748");
+  g.addColorStop(1, "#a86628");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   // Speckle bake
-  for (let i = 0; i < 2200; i++) {
+  for (let i = 0; i < 3000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
     const r = Math.random() * 1.4 + 0.3;
-    ctx.fillStyle = `rgba(60,30,5,${Math.random() * 0.28 + 0.05})`;
+    ctx.fillStyle = `rgba(80,40,10,${Math.random() * 0.30 + 0.06})`;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
   // Highlights
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 500; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const r = Math.random() * 2.5 + 0.6;
-    ctx.fillStyle = `rgba(255,225,170,${Math.random() * 0.15})`;
+    const r = Math.random() * 2.2 + 0.6;
+    ctx.fillStyle = `rgba(255,235,190,${Math.random() * 0.18})`;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  // Subtle dark scorch streaks for fortune-cookie character
+  for (let i = 0; i < 18; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.random() * Math.PI * 2);
+    ctx.fillStyle = `rgba(60,28,5,${Math.random() * 0.18 + 0.05})`;
+    ctx.fillRect(-Math.random() * 30 - 10, -1.5, Math.random() * 60 + 20, 3);
+    ctx.restore();
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.repeat.set(2, 1);
+  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+const cookieTex = makeCookieTexture();
 
-// Mooncake top texture: stamped 福 character + scalloped border
-function makeMooncakeTopTexture(size = 1024) {
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const ctx = c.getContext("2d");
-  // Base radial gradient (center darker = stamped indent)
-  const g = ctx.createRadialGradient(size/2, size/2, size*0.05, size/2, size/2, size/2);
-  g.addColorStop(0, "#7d5026");
-  g.addColorStop(0.35, "#a06f37");
-  g.addColorStop(0.7, "#c89456");
-  g.addColorStop(0.92, "#dca964");
-  g.addColorStop(1.0, "#a87238");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
+// ---------- Build a fortune cookie half ----------
+// A traditional fortune cookie is a folded, pinched wafer crescent.
+// We model each half as a parametric surface of revolution-of-an-arc, then
+// pinch the two ends so they meet at the central seam (the "fold").
+//
+// The classic fortune-cookie silhouette from the side is a "C" shape:
+// a curved disc that has been folded along a diameter, with the two ends
+// pinched together at the equator. Here we approximate it with a custom
+// parametric surface.
 
-  // Outer scalloped band (rosette pattern around 福)
-  ctx.save();
-  ctx.translate(size/2, size/2);
-  const petals = 16;
-  for (let i = 0; i < petals; i++) {
-    ctx.save();
-    ctx.rotate((i / petals) * Math.PI * 2);
-    ctx.beginPath();
-    ctx.ellipse(size * 0.36, 0, size * 0.06, size * 0.025, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(70,40,15,0.55)";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(size * 0.36, 0, size * 0.055, size * 0.02, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,210,140,0.18)";
-    ctx.fill();
-    ctx.restore();
+function makeCookieHalfGeometry(isLeft) {
+  // Half-torus arch geometry. The cookie is a folded wafer arc spanning
+  // alpha=0 (left tip on table) → alpha=PI/2 (apex of the arch) → alpha=PI
+  // (right tip on table). We split the cookie into LEFT and RIGHT halves
+  // around the apex (alpha=PI/2), so when cracked the two halves separate
+  // sideways and a slip can emerge from the gap.
+  //
+  // Cross-section: full tube around (squashed into a flat wafer).
+
+  const Nv = 32;          // around the tube cross-section
+  const R = 1.05;         // major radius (size of the arc curve)
+  const r = 0.42;         // tube minor radius
+  const tubeFlatY = 0.65; // squash factor (oval, not round)
+  const tubeFlatZ = 1.30; // stretch front-back (wider wafer)
+  const seamGap = 0.02;   // tiny gap so faces don't z-fight at the seam
+
+  // Each half spans half the arc
+  const alphaStart = isLeft ? 0 : Math.PI / 2 + seamGap;
+  const alphaEnd   = isLeft ? Math.PI / 2 - seamGap : Math.PI;
+  const Nu = 40;
+
+  const verts = [];
+  const idx = [];
+  const uvs = [];
+
+  for (let i = 0; i <= Nu; i++) {
+    const u = i / Nu;
+    const alpha = alphaStart + u * (alphaEnd - alphaStart);
+    // Center of the tube at this arc step, in CANONICAL world coords
+    // We'll compute global alpha (0..PI) for the taper so both halves match.
+    const globalU = alpha / Math.PI; // 0..1 across full cookie
+    const cx = -R * Math.cos(alpha);
+    const cy = R * Math.sin(alpha) - 0.4;
+    const cz = 0;
+    const tx = Math.sin(alpha);
+    const ty = Math.cos(alpha);
+    const tipTaper = 0.40 + 0.60 * Math.sin(globalU * Math.PI);
+
+    for (let j = 0; j <= Nv; j++) {
+      const v = j / Nv;
+      const beta = v * 2 * Math.PI;
+      const localUp = r * Math.cos(beta) * tubeFlatY * tipTaper;
+      const localOut = r * Math.sin(beta) * tubeFlatZ * tipTaper;
+      const x = cx + localUp * tx;
+      const y = cy + localUp * ty;
+      const z = cz + localOut;
+      const wobble = Math.sin(globalU * Math.PI * 5) * 0.01 * Math.cos(beta);
+      verts.push(x + wobble, y, z);
+      uvs.push(globalU, v);
+    }
   }
-  // Inner thin ring around the 福
-  ctx.beginPath();
-  ctx.arc(0, 0, size * 0.22, 0, Math.PI * 2);
-  ctx.lineWidth = size * 0.006;
-  ctx.strokeStyle = "rgba(70,40,15,0.55)";
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(0, 0, size * 0.215, 0, Math.PI * 2);
-  ctx.lineWidth = size * 0.002;
-  ctx.strokeStyle = "rgba(255,225,170,0.4)";
-  ctx.stroke();
-
-  // 福 character — stamped, drawn larger, sharper, with crisp inner shadow
-  ctx.font = `900 ${size * 0.34}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  // Darker stamped fill
-  ctx.fillStyle = "rgba(38,18,4,0.92)";
-  ctx.fillText("福", 0, size * 0.005);
-  // Subtle highlight on the top edge of the strokes (relief)
-  ctx.fillStyle = "rgba(255,225,170,0.22)";
-  ctx.fillText("福", -size * 0.005, -size * 0.003);
-
-  // Speckle/bake noise
-  ctx.restore();
-  for (let i = 0; i < 2500; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const r = Math.random() * 1.2 + 0.3;
-    ctx.fillStyle = `rgba(40,20,5,${Math.random() * 0.20 + 0.04})`;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < Nu; i++) {
+    for (let j = 0; j < Nv; j++) {
+      const a = i * (Nv + 1) + j;
+      const b = a + 1;
+      const c = a + (Nv + 1);
+      const d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
   }
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-const sideTex = makeMooncakeSideTexture();
-const topTex = makeMooncakeTopTexture();
-
-const sideMat = new THREE.MeshStandardMaterial({
-  map: sideTex,
-  color: 0xc9904f,
-  roughness: 0.7,
-  metalness: 0.05
-});
-const topMat = new THREE.MeshStandardMaterial({
-  map: topTex,
-  color: 0xd9a35e,
-  roughness: 0.55,
-  metalness: 0.1,
-  side: THREE.DoubleSide
-});
-// Inner crumb (revealed when broken)
-const innerMat = new THREE.MeshStandardMaterial({
-  color: 0x6b4422,
-  roughness: 1.0,
-  metalness: 0.0,
-  emissive: 0x2a1408,
-  emissiveIntensity: 0.2
-});
-
-// ---------- Build top half and bottom half groups ----------
-// Strategy: each half is a short cylinder (with fluted side via vertex displacement)
-// and a separate sculpted top/bottom face mesh that uses the stamp texture.
-const topGroup = new THREE.Group();
-const botGroup = new THREE.Group();
-
-function makeFlutedCylinder(yMin, yMax, radialSegs = 96, heightSegs = 4) {
-  const height = yMax - yMin;
-  const geo = new THREE.CylinderGeometry(MC_RADIUS, MC_RADIUS, height, radialSegs, heightSegs, true);
-  geo.translate(0, (yMin + yMax) / 2, 0);
-  // Add fluting via vertex displacement
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const theta = Math.atan2(z, x);
-    const r0 = Math.sqrt(x * x + z * z);
-    const yNorm = y / (MC_HEIGHT / 2);
-    // Bow outward in middle
-    const bow = Math.sin((y + MC_HEIGHT/2) / MC_HEIGHT * Math.PI) * 0.04;
-    // Fluting strongest near equator, fades toward top/bottom
-    const flutMask = Math.cos(yNorm * Math.PI / 2);
-    const r = r0 + bow - Math.abs(Math.cos(theta * MC_FLUTES)) * MC_FLUTE_DEPTH * flutMask;
-    pos.setX(i, r * Math.cos(theta));
-    pos.setZ(i, r * Math.sin(theta));
-  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
 }
 
-const topSide = new THREE.Mesh(makeFlutedCylinder(0, MC_HEIGHT / 2), sideMat);
-topSide.castShadow = topSide.receiveShadow = true;
-const botSide = new THREE.Mesh(makeFlutedCylinder(-MC_HEIGHT / 2, 0), sideMat);
-botSide.castShadow = botSide.receiveShadow = true;
+const cookieMat = new THREE.MeshStandardMaterial({
+  map: cookieTex,
+  color: 0xe6b270,
+  roughness: 0.78,
+  metalness: 0.04,
+  side: THREE.DoubleSide
+});
 
-// Domed top cap with 福 stamp — built via radial subdivisions, properly UV-mapped
-const topCap = new THREE.Mesh(makeMooncakeCap(true), topMat);
-topCap.position.y = MC_HEIGHT / 2 + 0.005; // tiny offset to avoid z-fighting
-topCap.castShadow = topCap.receiveShadow = true;
+const leftGroup = new THREE.Group();
+const rightGroup = new THREE.Group();
 
-// Bottom flat cap
-const botCap = new THREE.Mesh(makeMooncakeCap(false), sideMat);
-botCap.position.y = -MC_HEIGHT / 2 - 0.005;
-botCap.castShadow = botCap.receiveShadow = true;
+const leftMesh = new THREE.Mesh(makeCookieHalfGeometry(true), cookieMat);
+leftMesh.castShadow = leftMesh.receiveShadow = true;
+leftGroup.add(leftMesh);
 
-// Inner faces (broken interior)
-const innerDiscGeo = new THREE.CircleGeometry(MC_RADIUS - 0.02, 64);
-const topInnerDisc = new THREE.Mesh(innerDiscGeo, innerMat);
-topInnerDisc.rotation.x = Math.PI / 2;
-topInnerDisc.position.y = 0.001;
-
-const botInnerDisc = new THREE.Mesh(innerDiscGeo, innerMat);
-botInnerDisc.rotation.x = -Math.PI / 2;
-botInnerDisc.position.y = -0.001;
-
-topGroup.add(topSide);
-topGroup.add(topCap);
-topGroup.add(topInnerDisc);
-
-botGroup.add(botSide);
-botGroup.add(botCap);
-botGroup.add(botInnerDisc);
+const rightMesh = new THREE.Mesh(makeCookieHalfGeometry(false), cookieMat);
+rightMesh.castShadow = rightMesh.receiveShadow = true;
+rightGroup.add(rightMesh);
 
 const cookie = new THREE.Group();
-cookie.add(topGroup);
-cookie.add(botGroup);
+cookie.add(leftGroup);
+cookie.add(rightGroup);
+// Tilt cookie so the slip-exit slot (long axis) faces the camera nicely
+cookie.rotation.y = 0.0;
 scene.add(cookie);
 
 // ---------- Paper fortune slip ----------
-// Aspect ~ 5:1.6 (wider than before so 4 chars + a small caption fit cleanly)
-const PAPER_W = 1.7, PAPER_H = 0.55;
-const PAPER_CANVAS_W = 1024, PAPER_CANVAS_H = 320;
+const PAPER_W = 1.65, PAPER_H = 0.40;
+const PAPER_CANVAS_W = 1280, PAPER_CANVAS_H = 280;
 
 const paperCanvas = document.createElement("canvas");
 paperCanvas.width = PAPER_CANVAS_W;
@@ -426,25 +268,25 @@ const paperCtx = paperCanvas.getContext("2d");
 function drawPaperSlip(zh, attribution) {
   const ctx = paperCtx;
   const w = PAPER_CANVAS_W, h = PAPER_CANVAS_H;
-  // Cream paper base with subtle vignette
+  // Cream paper base
   const bg = ctx.createLinearGradient(0, 0, 0, h);
-  bg.addColorStop(0, "#fff7df");
+  bg.addColorStop(0, "#fff8e0");
   bg.addColorStop(0.5, "#fdeec0");
-  bg.addColorStop(1, "#f5dfa5");
+  bg.addColorStop(1, "#f3dca0");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
-  // Soft vignette on edges
-  const vg = ctx.createRadialGradient(w/2, h/2, h*0.4, w/2, h/2, w*0.6);
+  // Subtle vignette (much lighter than before so it doesn't read as a shadow)
+  const vg = ctx.createRadialGradient(w/2, h/2, h*0.35, w/2, h/2, w*0.6);
   vg.addColorStop(0, "rgba(0,0,0,0)");
-  vg.addColorStop(1, "rgba(120,80,30,0.28)");
+  vg.addColorStop(1, "rgba(160,110,50,0.08)");
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
-  // Paper grain noise
-  for (let i = 0; i < 1200; i++) {
-    ctx.fillStyle = `rgba(${120 + Math.random()*40},${90 + Math.random()*30},${40 + Math.random()*20},${Math.random()*0.07})`;
+  // Paper grain
+  for (let i = 0; i < 1500; i++) {
+    ctx.fillStyle = `rgba(${130 + Math.random()*40},${95 + Math.random()*30},${45 + Math.random()*20},${Math.random()*0.07})`;
     ctx.fillRect(Math.random()*w, Math.random()*h, 1, 1);
   }
-  // Thin red border (auspicious red, traditional fortune-slip look)
+  // Red border (fortune-slip aesthetic)
   ctx.strokeStyle = "#a83232";
   ctx.lineWidth = 6;
   ctx.strokeRect(14, 14, w - 28, h - 28);
@@ -452,23 +294,22 @@ function drawPaperSlip(zh, attribution) {
   ctx.lineWidth = 2;
   ctx.strokeRect(24, 24, w - 48, h - 48);
 
-  // Chinese quote — large, centered, ink-black with warm tint
+  // Chinese quote — auto-fit horizontally
   ctx.fillStyle = "#1a0f06";
-  // Pick font size that fits horizontally (Chinese strings are short — usually 4-12 chars)
   let fontSize = 110;
   ctx.font = `700 ${fontSize}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
-  while (ctx.measureText(zh).width > w - 100 && fontSize > 40) {
+  while (ctx.measureText(zh).width > w - 120 && fontSize > 40) {
     fontSize -= 4;
     ctx.font = `700 ${fontSize}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
   }
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(zh, w / 2, h / 2 - 18);
+  ctx.fillText(zh, w / 2, h / 2 - 22);
 
-  // Small attribution underneath in red
+  // Attribution
   ctx.font = `500 28px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
   ctx.fillStyle = "#a83232";
-  ctx.fillText(attribution, w / 2, h - 48);
+  ctx.fillText(attribution, w / 2, h - 50);
 
   paperTex.needsUpdate = true;
 }
@@ -476,31 +317,26 @@ function drawPaperSlip(zh, attribution) {
 const paperTex = new THREE.CanvasTexture(paperCanvas);
 paperTex.colorSpace = THREE.SRGBColorSpace;
 paperTex.anisotropy = 8;
-drawPaperSlip("月饼签", "— Mooncake Oracle");
+drawPaperSlip("签语饼", "— Fortune Oracle");
 
 const paperGeo = new THREE.PlaneGeometry(PAPER_W, PAPER_H, 1, 1);
-const paperMat = new THREE.MeshStandardMaterial({
+const paperMat = new THREE.MeshBasicMaterial({
   map: paperTex,
   color: 0xffffff,
-  roughness: 0.92,
-  metalness: 0.0,
   side: THREE.DoubleSide,
-  emissive: 0xffd897,
-  emissiveIntensity: 0.18,
-  emissiveMap: paperTex
+  toneMapped: false
 });
 const paper = new THREE.Mesh(paperGeo, paperMat);
-paper.position.set(0, 0, 0);
-paper.rotation.z = -0.12;
-paper.scale.setScalar(0.001);
+// Sits inside the cookie initially, slightly forward so it's never occluded
+paper.position.set(0, 0, 0.08);
 paper.visible = false;
-cookie.add(paper);
+scene.add(paper); // attached to scene (NOT cookie) so spin doesn't whip it
 
 // ---------- Crumb particles ----------
-const CRUMB_COUNT = 80;
+const CRUMB_COUNT = 60;
 const crumbs = [];
-const crumbGeo = new THREE.IcosahedronGeometry(0.06, 0);
-const crumbMat = new THREE.MeshStandardMaterial({ color: 0x8c5824, roughness: 1.0 });
+const crumbGeo = new THREE.IcosahedronGeometry(0.05, 0);
+const crumbMat = new THREE.MeshStandardMaterial({ color: 0xc9904f, roughness: 1.0 });
 for (let i = 0; i < CRUMB_COUNT; i++) {
   const m = new THREE.Mesh(crumbGeo, crumbMat);
   m.visible = false;
@@ -514,7 +350,7 @@ for (let i = 0; i < CRUMB_COUNT; i++) {
   });
 }
 
-// ---------- Floating sparkle motes ----------
+// ---------- Floating motes ----------
 const MOTE_COUNT = 40;
 const moteGeo = new THREE.SphereGeometry(0.015, 6, 6);
 const moteMat = new THREE.MeshBasicMaterial({ color: 0xffd97a, transparent: true, opacity: 0.85 });
@@ -565,15 +401,16 @@ function onClick(e) {
   pointerToNDC(e);
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObject(cookie, true);
-  if (hits.length === 0) return;
+  // If the user clicks anywhere in the canvas, crack — being lenient since
+  // the cookie's hit area is small and the spinning bob can dodge clicks.
   crack();
 }
 
-// ---------- Break animation ----------
+// ---------- Break + slide animation ----------
 function crack() {
   cracked = true;
   hint.classList.add("fade");
-  // Snap cookie back to face-camera orientation so the slip emerges facing us
+  // Snap cookie to face-camera so the slip slides along screen X
   cookie.rotation.set(0, 0, 0);
   cookie.position.set(0, 0, 0);
 
@@ -584,23 +421,32 @@ function crack() {
   elEn.textContent = "“" + q.en + "”";
   elAuthor.textContent = "— " + q.author;
 
-  // Stamp the picked quote onto the paper slip texture
   drawPaperSlip(q.zh, "— " + q.author);
 
-  const startTime = performance.now();
-  const shakeDur = 240;
-  const splitDur = 850;
+  // Initial paper position: well in front of the cookie, BELOW the arch
+  paper.visible = true;
+  paper.scale.set(1, 1, 1);
+  paper.position.set(-1.0, -0.20, 1.4);
+  paper.rotation.set(0, 0, 0); // face camera flat — no tilt that creates shading
+  // Render paper on top so cookie geometry never occludes it
+  paperMat.depthTest = false;
+  paper.renderOrder = 999;
 
-  // Spawn crumbs around equator
+  const startTime = performance.now();
+  const shakeDur = 220;
+  const splitDur = 600;
+  const slideDur = 1100;
+
+  // Spawn crumbs
   for (const c of crumbs) {
     c.mesh.visible = true;
-    const a = Math.random() * Math.PI * 2;
-    const r = MC_RADIUS * (0.6 + Math.random() * 0.5);
-    c.mesh.position.set(Math.cos(a) * r, (Math.random() - 0.5) * 0.1, Math.sin(a) * r);
+    const a = (Math.random() - 0.5) * Math.PI;
+    const r = 0.6 + Math.random() * 0.5;
+    c.mesh.position.set((Math.random() - 0.5) * 1.8, 0, (Math.random() - 0.3) * 0.5);
     c.vel.set(
-      Math.cos(a) * (0.02 + Math.random() * 0.04),
+      (Math.random() - 0.5) * 0.05,
       0.04 + Math.random() * 0.05,
-      Math.sin(a) * (0.02 + Math.random() * 0.04)
+      (Math.random() - 0.3) * 0.05
     );
     c.spin.set(
       (Math.random() - 0.5) * 0.25,
@@ -610,16 +456,15 @@ function crack() {
     c.life = 1.0;
   }
 
-  paper.visible = true;
-  paper.scale.setScalar(0.001);
-
   const animateCrack = (now) => {
     const t = now - startTime;
+
+    // Phase 1: shake
     if (t < shakeDur) {
       const k = (t / shakeDur);
       const amp = 0.05 * (1 - k);
       cookie.position.x = (Math.random() - 0.5) * amp;
-      cookie.position.y = idleY + (Math.random() - 0.5) * amp;
+      cookie.position.y = (Math.random() - 0.5) * amp;
       cookie.rotation.z = (Math.random() - 0.5) * amp * 0.5;
       requestAnimationFrame(animateCrack);
       return;
@@ -627,29 +472,37 @@ function crack() {
     cookie.position.x = 0;
     cookie.rotation.z = 0;
 
-    const k = Math.min((t - shakeDur) / splitDur, 1);
-    const ease = 1 - Math.pow(1 - k, 3);
+    // Phase 2: split (left half slides left + tips left, right does mirror)
+    const splitT = Math.min((t - shakeDur) / splitDur, 1);
+    const splitEase = 1 - Math.pow(1 - splitT, 3);
+    leftGroup.position.x = -splitEase * 0.30;
+    leftGroup.rotation.z = splitEase * 0.35;     // tip outward (apex falls left)
+    leftGroup.position.y = -splitEase * 0.05;
+    rightGroup.position.x = splitEase * 0.30;
+    rightGroup.rotation.z = -splitEase * 0.35;
+    rightGroup.position.y = -splitEase * 0.05;
 
-    // Top half lifts up and tilts back
-    topGroup.position.y = ease * 0.95;
-    topGroup.rotation.x = -ease * 0.7;
-    topGroup.position.z = ease * 0.25;
-
-    // Bottom half nudges down and tilts forward slightly
-    botGroup.position.y = -ease * 0.18;
-    botGroup.rotation.x = ease * 0.18;
-
-    // Reveal paper: rises up between halves, tilted toward the camera
-    paper.scale.setScalar(0.001 + ease * 1.55);
-    paper.position.y = 0.05 + ease * 0.65;
-    paper.position.z = 0.15 + ease * 0.05;
-    paper.rotation.x = -0.55 + ease * 0.05; // tilt face toward camera (which sits high)
-    paper.rotation.z = -0.05 + Math.sin(t * 0.005) * 0.02;
-
-    if (k >= 1) {
-      setTimeout(() => card.classList.remove("hidden"), 150);
-      return;
+    // Phase 3: slip slides from left → right
+    const slideStart = shakeDur + splitDur * 0.4; // start sliding before split fully done
+    if (t > slideStart) {
+      const slideT = Math.min((t - slideStart) / slideDur, 1);
+      const slideEase = 1 - Math.pow(1 - slideT, 2);
+      // Slide from x=-1.6 to x=+1.6 (off-screen right)... no, we want it to LAND visible
+      // Final resting position: just to the right of the cookie, fully visible
+      const xStart = -1.0;
+      const xEnd = 0.6;
+      paper.position.x = xStart + (xEnd - xStart) * slideEase;
+      paper.position.y = -0.20 + Math.sin(slideT * Math.PI) * 0.10;
+      paper.position.z = 1.4; // far forward, no z-fighting
+      // Subtle wave as it slides
+      paper.rotation.z = Math.sin(slideT * Math.PI * 2) * 0.025;
+      // Show quote card after the slip is mostly out
+      if (slideT > 0.55 && card.classList.contains("hidden")) {
+        card.classList.remove("hidden");
+      }
+      if (slideT >= 1) return; // done
     }
+
     requestAnimationFrame(animateCrack);
   };
   requestAnimationFrame(animateCrack);
@@ -659,14 +512,14 @@ function reset() {
   cracked = false;
   card.classList.add("hidden");
   hint.classList.remove("fade");
-  topGroup.position.set(0, 0, 0);
-  topGroup.rotation.set(0, 0, 0);
-  botGroup.position.set(0, 0, 0);
-  botGroup.rotation.set(0, 0, 0);
+  leftGroup.position.set(0, 0, 0);
+  leftGroup.rotation.set(0, 0, 0);
+  rightGroup.position.set(0, 0, 0);
+  rightGroup.rotation.set(0, 0, 0);
   paper.visible = false;
-  paper.position.set(0, 0, 0);
+  paper.position.set(-1.0, -0.20, 1.4);
   paper.rotation.set(0, 0, 0);
-  paper.scale.setScalar(0.001);
+  paper.scale.set(1, 1, 1);
   for (const c of crumbs) {
     c.mesh.visible = false;
     c.life = 0;
@@ -675,20 +528,15 @@ function reset() {
 
 // ---------- Render loop ----------
 const clock = new THREE.Clock();
-let idleY = 0;
 function tick() {
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
 
   if (!cracked) {
-    // Gentle Y-spin only — keeps the 福 stamp visible from above
-    cookie.rotation.y = t * 0.18;
-    cookie.rotation.x = 0;
-    idleY = Math.sin(t * 1.0) * 0.04;
-    cookie.position.y = idleY;
-  } else {
-    // Freeze rotation when broken so the paper slip stays facing the camera
-    cookie.position.y = 0;
+    // Gentle bob and tiny tilt — but never rotate around Y (would spin the C edge-on)
+    cookie.rotation.x = Math.sin(t * 0.5) * 0.08;
+    cookie.rotation.z = Math.sin(t * 0.7) * 0.04;
+    cookie.position.y = Math.sin(t * 1.2) * 0.05;
   }
 
   for (const c of crumbs) {
@@ -703,7 +551,6 @@ function tick() {
     c.mesh.scale.setScalar(Math.max(0, c.life));
   }
 
-  // Floating motes
   for (const m of motes) {
     m.mesh.position.y = m.base.y + Math.sin(t * m.speed + m.phase) * 0.25;
     m.mesh.material.opacity = 0.3 + (Math.sin(t * 2 + m.phase) + 1) * 0.3;

@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>幸运饼干 · Fortune Cookie</title>
-  <meta name="description" content="Click the 3D fortune cookie to crack it open and reveal a Chinese quote of wisdom." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🥠%3C/text%3E%3C/svg%3E" />
+  <title>月饼签 · Mooncake Oracle</title>
+  <meta name="description" content="Tap the 3D mooncake to break it open and reveal a Chinese wisdom quote." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🌙%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./styles.css" />
   <script type="importmap">
     {
@@ -21,10 +21,10 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🥠</span>
-      <span class="title">幸运饼干 <span class="sub">Fortune Cookie</span></span>
+      <span class="logo">🌙</span>
+      <span class="title">月饼签 <span class="sub">Mooncake Oracle</span></span>
     </div>
-    <button id="reset-btn" class="ghost-btn" title="Get another">↻ Refresh</button>
+    <button id="reset-btn" class="ghost-btn" title="Get another">↻ New</button>
   </header>
 
   <main>
@@ -32,7 +32,7 @@
       <canvas id="cookie-canvas"></canvas>
       <div id="hint" class="hint">
         <span class="pulse-dot"></span>
-        Click the cookie to crack it
+        Tap to break open
       </div>
     </div>
 
@@ -43,12 +43,12 @@
       <div class="quote-meta">
         <span id="quote-author"></span>
       </div>
-      <button id="again-btn" class="primary-btn">Crack another 🥠</button>
+      <button id="again-btn" class="primary-btn">Break another 🌙</button>
     </section>
   </main>
 
   <footer>
-    <span>Built with Three.js · Quotes from classic Chinese wisdom</span>
+    <span>Mooncake fortunes for the digital age · Created by Gaurav Dhongde</span>
   </footer>
 
   <script type="module" src="./app.js"></script>

@@ -414,14 +414,80 @@ cookie.add(botGroup);
 scene.add(cookie);
 
 // ---------- Paper fortune slip ----------
-const paperGeo = new THREE.PlaneGeometry(1.5, 0.32, 1, 1);
+// Aspect ~ 5:1.6 (wider than before so 4 chars + a small caption fit cleanly)
+const PAPER_W = 1.7, PAPER_H = 0.55;
+const PAPER_CANVAS_W = 1024, PAPER_CANVAS_H = 320;
+
+const paperCanvas = document.createElement("canvas");
+paperCanvas.width = PAPER_CANVAS_W;
+paperCanvas.height = PAPER_CANVAS_H;
+const paperCtx = paperCanvas.getContext("2d");
+
+function drawPaperSlip(zh, attribution) {
+  const ctx = paperCtx;
+  const w = PAPER_CANVAS_W, h = PAPER_CANVAS_H;
+  // Cream paper base with subtle vignette
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#fff7df");
+  bg.addColorStop(0.5, "#fdeec0");
+  bg.addColorStop(1, "#f5dfa5");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  // Soft vignette on edges
+  const vg = ctx.createRadialGradient(w/2, h/2, h*0.4, w/2, h/2, w*0.6);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(120,80,30,0.28)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+  // Paper grain noise
+  for (let i = 0; i < 1200; i++) {
+    ctx.fillStyle = `rgba(${120 + Math.random()*40},${90 + Math.random()*30},${40 + Math.random()*20},${Math.random()*0.07})`;
+    ctx.fillRect(Math.random()*w, Math.random()*h, 1, 1);
+  }
+  // Thin red border (auspicious red, traditional fortune-slip look)
+  ctx.strokeStyle = "#a83232";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(14, 14, w - 28, h - 28);
+  ctx.strokeStyle = "#c95a4a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(24, 24, w - 48, h - 48);
+
+  // Chinese quote — large, centered, ink-black with warm tint
+  ctx.fillStyle = "#1a0f06";
+  // Pick font size that fits horizontally (Chinese strings are short — usually 4-12 chars)
+  let fontSize = 110;
+  ctx.font = `700 ${fontSize}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
+  while (ctx.measureText(zh).width > w - 100 && fontSize > 40) {
+    fontSize -= 4;
+    ctx.font = `700 ${fontSize}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
+  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(zh, w / 2, h / 2 - 18);
+
+  // Small attribution underneath in red
+  ctx.font = `500 28px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`;
+  ctx.fillStyle = "#a83232";
+  ctx.fillText(attribution, w / 2, h - 48);
+
+  paperTex.needsUpdate = true;
+}
+
+const paperTex = new THREE.CanvasTexture(paperCanvas);
+paperTex.colorSpace = THREE.SRGBColorSpace;
+paperTex.anisotropy = 8;
+drawPaperSlip("月饼签", "— Mooncake Oracle");
+
+const paperGeo = new THREE.PlaneGeometry(PAPER_W, PAPER_H, 1, 1);
 const paperMat = new THREE.MeshStandardMaterial({
-  color: 0xfff5d8,
-  roughness: 0.9,
+  map: paperTex,
+  color: 0xffffff,
+  roughness: 0.92,
   metalness: 0.0,
   side: THREE.DoubleSide,
-  emissive: 0x55432a,
-  emissiveIntensity: 0.18
+  emissive: 0xffd897,
+  emissiveIntensity: 0.18,
+  emissiveMap: paperTex
 });
 const paper = new THREE.Mesh(paperGeo, paperMat);
 paper.position.set(0, 0, 0);
@@ -507,6 +573,9 @@ function onClick(e) {
 function crack() {
   cracked = true;
   hint.classList.add("fade");
+  // Snap cookie back to face-camera orientation so the slip emerges facing us
+  cookie.rotation.set(0, 0, 0);
+  cookie.position.set(0, 0, 0);
 
   const q = pickRandom(lastQuote);
   lastQuote = q;
@@ -514,6 +583,9 @@ function crack() {
   elPy.textContent = q.pinyin;
   elEn.textContent = "“" + q.en + "”";
   elAuthor.textContent = "— " + q.author;
+
+  // Stamp the picked quote onto the paper slip texture
+  drawPaperSlip(q.zh, "— " + q.author);
 
   const startTime = performance.now();
   const shakeDur = 240;
@@ -559,18 +631,20 @@ function crack() {
     const ease = 1 - Math.pow(1 - k, 3);
 
     // Top half lifts up and tilts back
-    topGroup.position.y = ease * 0.7;
-    topGroup.rotation.x = -ease * 0.55;
-    topGroup.position.z = ease * 0.2;
+    topGroup.position.y = ease * 0.95;
+    topGroup.rotation.x = -ease * 0.7;
+    topGroup.position.z = ease * 0.25;
 
     // Bottom half nudges down and tilts forward slightly
-    botGroup.position.y = -ease * 0.15;
+    botGroup.position.y = -ease * 0.18;
     botGroup.rotation.x = ease * 0.18;
 
-    // Reveal paper (grows up between halves)
-    paper.scale.setScalar(0.001 + ease * 1.3);
-    paper.position.y = ease * 0.18;
-    paper.rotation.z = -0.12 + Math.sin(t * 0.005) * 0.03;
+    // Reveal paper: rises up between halves, tilted toward the camera
+    paper.scale.setScalar(0.001 + ease * 1.55);
+    paper.position.y = 0.05 + ease * 0.65;
+    paper.position.z = 0.15 + ease * 0.05;
+    paper.rotation.x = -0.55 + ease * 0.05; // tilt face toward camera (which sits high)
+    paper.rotation.z = -0.05 + Math.sin(t * 0.005) * 0.02;
 
     if (k >= 1) {
       setTimeout(() => card.classList.remove("hidden"), 150);
@@ -590,6 +664,8 @@ function reset() {
   botGroup.position.set(0, 0, 0);
   botGroup.rotation.set(0, 0, 0);
   paper.visible = false;
+  paper.position.set(0, 0, 0);
+  paper.rotation.set(0, 0, 0);
   paper.scale.setScalar(0.001);
   for (const c of crumbs) {
     c.mesh.visible = false;
@@ -611,7 +687,8 @@ function tick() {
     idleY = Math.sin(t * 1.0) * 0.04;
     cookie.position.y = idleY;
   } else {
-    cookie.rotation.y += dt * 0.18;
+    // Freeze rotation when broken so the paper slip stays facing the camera
+    cookie.position.y = 0;
   }
 
   for (const c of crumbs) {
